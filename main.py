@@ -523,7 +523,7 @@ def program():
     ppu[pos_nvtheta] = active_power(pos_nvtheta, theta, vpu, gpu, bpu, pos_neighbor_K)
     qpu[pos_nvtheta] = reactive_power(pos_nvtheta, theta, vpu, gpu, bpu, pos_neighbor_K)
     #------------------------------------------------------------------------------
-    #%%
+    
     #---------------------------SUBSYSTEM III-------------------------------------
     # Power flows
     active_power_flow = np.arange(num_nodes * num_nodes, dtype=np.float64).reshape(num_nodes, num_nodes)
