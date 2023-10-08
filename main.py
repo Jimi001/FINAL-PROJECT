@@ -7,6 +7,7 @@ import csv
 import numpy as np
 import time
 from os import listdir
+import os
 
 # Definition of functions used in the code, all below
 
@@ -123,7 +124,7 @@ def matrix_l(l, theta, voltage, conductance, susceptance, neighbor_positions, no
 
 # Menu for printing
 def menu():
-    print('\nCompleted.\n\nChoose one of the options below for printing the results or enter any other value to exit:\n')
+    print('Completed.\n\nChoose one of the options below for printing the results or enter any other value to exit:\n')
     print('1 - Active losses in transmission')
     print('2 - Reactive losses in transmission')
     print('3 - Final voltages and angles')
@@ -131,8 +132,17 @@ def menu():
     print('5 - Net reactive power injected at buses')
     print('6 - Active power flow in transmission')
     print('7 - Reactive power flow in transmission')
+    print('8 - N-1 Contingency Analysis')
+    
+    
 
-def program():
+
+opi = 0.0
+Pmin = 0.0
+Pmax = 0.0
+opi_list = []
+
+def program(perform_contingency = False, line_choice="", multiple=True):
     # List all the text files in the current directory
     txt_files = [x for x in listdir() if x.endswith('.txt')]
     choices = []
@@ -140,30 +150,31 @@ def program():
     # Generate a list of choices for the user to select from
     for i, filename in enumerate(txt_files):
         choices.append(f"{i+1} - {filename}")
-
+    
+    print("\n===============================================================")
     print("Choose a file from the list below by entering the integer value:")
     print("Note: The file should be in the same directory as the script.\n")
-    
+
     # Display the available choices to the user
     for choice in choices:
         print(choice)
         
     possible_choices = [str(i) for i in range(1, len(txt_files) + 1)]
     chosen_option = input('\nYour Choice: ')
-    
+
     # Keep asking for input until a valid choice is made
     while chosen_option not in possible_choices:
         print("Try again! Enter valid value!")
         chosen_option = input('\nYour Choice: ')
-    
-    error_input = input('\nEnter the values for Ep and Eq errors or press Enter for the default error (10e-5): ')
-    
+
+    error_input = input('\nEnter the value error or press Enter for the default error (10e-5): ')
+
     # Set the error to the default value if no input is provided
     if error_input == "":
         error_input = 0.00001
     else:
         error_input = float(error_input)
-    
+
     start_time = time.time()
     
     # Open the selected text file
@@ -329,16 +340,45 @@ def program():
     ypu = np.arange(num_nodes * num_nodes).reshape(num_nodes, num_nodes).astype('complex')
     ypu.fill(0)  # Fill all elements with 0
 
+    # print("branches_data=====================", branches_data)
+    # print("nodes_data=====================", nodes_data)
+
+    line_banches = []
+    # Constructing elements outside the main diagonal
+    for i in branches_data:
+        ypu[int(i[0]) - 1, int(i[1]) - 1] = -1 * (1 / (i[7] * 1j + i[6]) * np.exp(-1 * (i[15] * 1j)))
+        ypu[int(i[1]) - 1, int(i[0]) - 1] = -1 * (1 / (i[7] * 1j + i[6]) * np.exp(1 * (i[15] * 1j)))
+
+        line_banches.append(f"{int(i[0])}" + " " + f"{int(i[1])}")
+
     # Constructing the main diagonal, always non-zero
     for i in range(num_nodes):
         ypu[i][i] = nodes_data[i, 14] + nodes_data[i, 15] * 1j
         for j in neighbor_positions_branches[i]:
             ypu[i][i] = ypu[i][i] + branches_data[j][8] * (1j/2) + (1 / (branches_data[j][7] * 1j + branches_data[j][6]))
 
-    # Constructing elements outside the main diagonal
-    for i in branches_data:
-        ypu[int(i[0]) - 1, int(i[1]) - 1] = -1 * (1 / (i[7] * 1j + i[6]) * np.exp(-1 * (i[15] * 1j)))
-        ypu[int(i[1]) - 1, int(i[0]) - 1] = -1 * (1 / (i[7] * 1j + i[6]) * np.exp(1 * (i[15] * 1j)))
+    # global perform_contingency
+    if perform_contingency == True:
+        if line_choice == "":
+            line_choice = input("\nWhich lines do you want to switch off (use whitespace): ")
+        a, b = line_choice.split()
+        
+        ypu[int(a)-1][int(a)-1] += ypu[int(a)-1][int(b)-1]
+        ypu[int(b)-1][int(b)-1] += ypu[int(b)-1][int(a)-1]
+
+        ypu[int(a)-1][int(b)-1] = 0
+        ypu[int(b)-1][int(a)-1] = 0
+
+        # print("=====================")
+        # print(ypu)
+        # print("=====================")
+
+
+    
+
+    # print("=====================")
+    # print(ypu)
+    # print("=====================")
 
     gpu = np.real(ypu)  # Real part of Ypu
     bpu = np.imag(ypu)  # Imaginary part of Ypu
@@ -614,6 +654,7 @@ def program():
                                 (np.round(reactive_power_flow[int(i[0]), int(i[1])], 5)) + ' and ' + \
                                     str(np.round(reactive_power_flow[int(i[1]), int(i[0])], 5)) + \
                                     ' pu'])
+    
 
     for i in range(num_nodes):
         final_voltages_and_angles.append(['The final voltage at bus ' + \
@@ -634,12 +675,92 @@ def program():
                                 str(np.round(reactive_power(nodes_pos[i], \
                                         theta, vpu, gpu, bpu, pos_neighbor_K), 5)) + ' pu'])
     
+    Pi_values = []
+    for i in pos_nodes_in_branches:
+        Pi_values.append(np.round(active_power_flow[int(i[0]), int(i[1])], 5))
+
+    # ppu = []
+    # ppu_contingency = []
+    # voltage_base_case = []
+    # voltage_contingency = []
+
+    # for i in range(num_nodes):
+    #     ppu.append(np.round(active_power(nodes_pos[i], theta, vpu, gpu, bpu, pos_neighbor_K), 5))
+    #     voltage_base_case.append(np.round(vpu[i], 5))
+    #     if perform_contingency == True:
+    #         ppu_contingency.append(np.round(active_power(nodes_pos[i], theta, vpu, gpu, bpu, pos_neighbor_K), 5))
+    #         voltage_contingency.append(np.round(vpu[i], 5))
+
+    # print("ppu=========", ppu)
+    # print("ppu_ contingency=========", ppu_contingency, "\n")
+    # print("voltage_base_case=========", voltage_base_case)
+    # print("voltage_contingency=========", voltage_contingency, "\n")
+
+
+    Vi_values = []
+    Vj_values = []
+    impedance = []
+
+    for i in branches_data:
+        Vi_values.append(np.round(vpu[int(i[0]) - 1], 5))
+        Vj_values.append(np.round(vpu[int(i[1]) - 1], 5))
+        impedance.append(i[7])
+
+    
+    # Define the system parameters
+    NL = len(impedance)  # Number of lines
+    W = 1.0  # Weighting factor
+    n = 1.0  # Penalty function
+
+    # Calculate PIP
+    pip = 0.0
+    for i in range(NL):
+        Pi = Pi_values[i]
+        Pi_max = (Vi_values[i] * Vj_values[i]) / impedance[i]
+        pip += (W / (2 * n)) * ((Pi / Pi_max) ** (2 * n))
+
+    print(f"Active Power Performance Index (PIP): {pip:.5f}")
+
+    
+
+    #-----------------------------PIV---------------------------
+    # Define the system parameters (you can adjust these values as needed)
+    W = 1.0  # Weighting factor
+    n = 1.0  # Penalty function
+
+    Vi_values = []
+    for i in range(num_nodes):
+        Vi_values.append(np.round(vpu[i], 5)) 
+
+    NG = len(Vi_values)
+    piv = 0.0
+    Vmax, Vmin = 1.05, 0.95
+    for i in range(NG):
+        # Calculate PIV for the given bus
+        piv = (W / (2 * n)) * ((Vi_values[i] - Vmin) / (Vmax - Vmin))**(2 * n)
+    
+    print(f"Voltage Performance Index (PIP): {piv:.5f}\n")
+    
+
+    opi = pip + piv
+    print(f"Overall Performance Index (OPI): {opi:.5f}\n")
+    
+    
+    if perform_contingency == True and multiple == True:   
+        global opi_list     
+        opi_list.append(opi)
+        global Pmin
+        Pmin = min(opi_list)
+        global Pmax
+        Pmax = max(opi_list)
+        return
+
     # Printing
 
     menu()
     option = input("\nChoice: ")
 
-    while option in ['1', '2', '3', '4', '5', '6', '7']:
+    while option in ['1', '2', '3', '4', '5', '6', '7', '8']:
         if option == '1':
             print('')
             for i in active_losses:
@@ -647,63 +768,90 @@ def program():
             print('\nPress Enter to continue')
             input()
             menu()
-            option = input()
+            option = input("\nChoice: ")
             print('')
-        if option == '2':
+        elif option == '2':
             print('')
             for i in reactive_losses:
                 print(i[0])
             print('\nPress Enter to continue')
             input()
             menu()
-            option = input()
+            option = input("\nChoice: ")
             print('')
-        if option == '3':
+        elif option == '3':
             print('')
             for i in final_voltages_and_angles:
                 print(i[0])
             print('\nPress Enter to continue')
             input()
             menu()
-            option = input()
+            option = input("\nChoice: ")
             print('')
-        if option == '4':
+        elif option == '4':
             print('')
             for i in active_powers:
                 print(i[0])
             print('\nPress Enter to continue')
             input()
             menu()
-            option = input()
+            option = input("\nChoice: ")
             print('')
-        if option == '5':
+        elif option == '5':
             print('')
             for i in reactive_powers:
                 print(i[0])
             print('\nPress Enter to continue')
             input()
             menu()
-            option = input()
+            option = input("\nChoice: ")
             print('')
-        if option == '6':
+        elif option == '6':
             print('')
             for i in active_flows:
                 print(i[0])
             print('\nPress Enter to continue')
             input()
             menu()
-            option = input()
+            option = input("\nChoice: ")
             print('')
-        if option == '7':
+        elif option == '7':
             print('')
             for i in reactive_flows:
                 print(i[0])
             print('\nPress Enter to continue')
             input()
             menu()
-            option = input()
+            option = input("\nChoice: ")
             print('')
+        elif option == '8':            
+            os.system('cls')
+            choice = input("Do you want to perform contingency analysis for all the branch lines? y/n:  ")
+            if choice == 'y':
+                for branch in line_banches:
+                    program(perform_contingency = True, line_choice=branch)
+                    print(f"Transmission line {branch} completed\n")
+                new_list = []
+                i=0
+                #  Normalization of OPI data
+                for branch in line_banches:                    
+                    Pn = (0.8 * (opi_list[i] - Pmin) / (Pmax - Pmin)) + 0.1                        
+                    new_list.append({branch : round(Pn, 4)})
 
+                    i += 1
+                # Sort the list of dictionaries by their values in descending order
+                sorted_data = sorted(new_list, key=lambda x: list(x.values())[0], reverse=True)
+
+
+                print("sorted_opi_list: ", sorted_data)
+                print('\nPress Enter to continue')
+                input()
+                menu()
+                option = input("\nChoice: ")
+                print('')
+            else:
+                program(perform_contingency = True, multiple=False)
+        
     print('\nRestart? (y/n)\n')
     return
 
@@ -713,7 +861,7 @@ while restart != 'y' or restart != 'n':
     restart = input()
     if restart == 'y':
         program()
-    elif restart == 'n':
+    else:
         break
 
 
