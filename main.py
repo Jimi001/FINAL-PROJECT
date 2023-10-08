@@ -679,24 +679,6 @@ def program(perform_contingency = False, line_choice="", multiple=True):
     for i in pos_nodes_in_branches:
         Pi_values.append(np.round(active_power_flow[int(i[0]), int(i[1])], 5))
 
-    # ppu = []
-    # ppu_contingency = []
-    # voltage_base_case = []
-    # voltage_contingency = []
-
-    # for i in range(num_nodes):
-    #     ppu.append(np.round(active_power(nodes_pos[i], theta, vpu, gpu, bpu, pos_neighbor_K), 5))
-    #     voltage_base_case.append(np.round(vpu[i], 5))
-    #     if perform_contingency == True:
-    #         ppu_contingency.append(np.round(active_power(nodes_pos[i], theta, vpu, gpu, bpu, pos_neighbor_K), 5))
-    #         voltage_contingency.append(np.round(vpu[i], 5))
-
-    # print("ppu=========", ppu)
-    # print("ppu_ contingency=========", ppu_contingency, "\n")
-    # print("voltage_base_case=========", voltage_base_case)
-    # print("voltage_contingency=========", voltage_contingency, "\n")
-
-
     Vi_values = []
     Vj_values = []
     impedance = []
