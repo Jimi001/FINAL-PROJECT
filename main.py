@@ -133,41 +133,65 @@ def menu():
     print('6 - Active power flow in transmission')
     print('7 - Reactive power flow in transmission')
     print('8 - N-1 Contingency Analysis')
-    
-    
+    print('9 - Restart')
+
+def classify_opi(opi):
+    if 0.1 <= opi < 0.3:
+        return "Secure"
+    elif 0.3 <= opi < 0.4:
+        return "Critically secure"
+    elif 0.4 <= opi < 0.5:
+        return "Insecure"
+    elif 0.5 <= opi < 0.6:
+        return "Highly insecure"
+    elif 0.6 <= opi <= 0.9:
+        return "Most insecure"
+    else:
+        return "Unknown or Out of Range"
 
 
 opi = 0.0
 Pmin = 0.0
 Pmax = 0.0
 opi_list = []
+error_input = 0.0
+reader = None
+txt_files = []
+bus_voltage_pre_CS = []
+chosen_option = ''
+non_converging = False
+
 
 def program(perform_contingency = False, line_choice="", multiple=True):
-    # List all the text files in the current directory
-    txt_files = [x for x in listdir() if x.endswith('.txt')]
-    choices = []
+    if perform_contingency == False:
+        # List all the text files in the current directory
+        global txt_files
+        txt_files = [x for x in listdir() if x.endswith('.txt')]
+        choices = []
 
-    # Generate a list of choices for the user to select from
-    for i, filename in enumerate(txt_files):
-        choices.append(f"{i+1} - {filename}")
-    
-    print("\n===============================================================")
-    print("Choose a file from the list below by entering the integer value:")
-    print("Note: The file should be in the same directory as the script.\n")
-
-    # Display the available choices to the user
-    for choice in choices:
-        print(choice)
+        # Generate a list of choices for the user to select from
+        for i, filename in enumerate(txt_files):
+            choices.append(f"{i+1} - {filename}")
         
-    possible_choices = [str(i) for i in range(1, len(txt_files) + 1)]
-    chosen_option = input('\nYour Choice: ')
+        print("\n===============================================================")
+        print("Choose a file from the list below by entering the integer value:")
+        print("Note: The file should be in the same directory as the script.\n")
 
-    # Keep asking for input until a valid choice is made
-    while chosen_option not in possible_choices:
-        print("Try again! Enter valid value!")
+        # Display the available choices to the user
+        for choice in choices:
+            print(choice)
+            
+        possible_choices = [str(i) for i in range(1, len(txt_files) + 1)]
+        global chosen_option
         chosen_option = input('\nYour Choice: ')
 
-    error_input = input('\nEnter the value error or press Enter for the default error (10e-5): ')
+        # Keep asking for input until a valid choice is made
+        while chosen_option not in possible_choices:
+            print("Try again! Enter valid value!")
+            chosen_option = input('\nYour Choice: ')
+
+        global error_input
+        error_input = input('\nEnter the value error or press Enter for the default error (10e-5): ')
 
     # Set the error to the default value if no input is provided
     if error_input == "":
@@ -175,13 +199,14 @@ def program(perform_contingency = False, line_choice="", multiple=True):
     else:
         error_input = float(error_input)
 
-    start_time = time.time()
     
+        
     # Open the selected text file
     with open(txt_files[int(chosen_option) - 1]) as source_txt_file:
-        reader = csv.reader(source_txt_file)
+        global reader
+        reader = csv.reader(source_txt_file)            
         data = list(reader)
-        
+    start_time = time.time()    
     # Find the positions where the data ends based on the '-999' indicator
     cut_points = []
 
@@ -492,239 +517,250 @@ def program(perform_contingency = False, line_choice="", multiple=True):
     iteration = 0
 
     #-----------------------------SUBSYSTEM I-------------------------------------
-    while (abs(del_e).max()) >= error_input:
+    try:
+        while (abs(del_e).max()) >= error_input:
 
-        # Calculate delta values for each bus
-        for i in range(2 * num_nodes):
-            if i < num_nodes:
-                delta[i][0] = expected[i] - active_power(nodes_pos[i], theta, vpu, gpu, bpu, pos_neighbor_K)
-            else:
-                delta[i][0] = expected[i] - reactive_power(nodes_pos[i], theta, vpu, gpu, bpu, pos_neighbor_K)
+            # Calculate delta values for each bus
+            for i in range(2 * num_nodes):
+                if i < num_nodes:
+                    delta[i][0] = expected[i] - active_power(nodes_pos[i], theta, vpu, gpu, bpu, pos_neighbor_K)
+                else:
+                    delta[i][0] = expected[i] - reactive_power(nodes_pos[i], theta, vpu, gpu, bpu, pos_neighbor_K)
 
-        # Initialize submatrices
-        h.fill(0)
-        n.fill(0)
-        m.fill(0)
-        l.fill(0)
+            # Initialize submatrices
+            h.fill(0)
+            n.fill(0)
+            m.fill(0)
+            l.fill(0)
 
-        # Calculate submatrices
-        matrix_h(h, theta, vpu, gpu, bpu, pos_neighbor_K, pos_nvtheta)
-        matrix_n(n, theta, vpu, gpu, bpu, pos_neighbor_K)
-        matrix_m(m, theta, vpu, gpu, bpu, pos_neighbor_K)
-        matrix_l(l, theta, vpu, gpu, bpu, pos_neighbor_K, pos_nvtheta, pos_npv)
+            # Calculate submatrices
+            matrix_h(h, theta, vpu, gpu, bpu, pos_neighbor_K, pos_nvtheta)
+            matrix_n(n, theta, vpu, gpu, bpu, pos_neighbor_K)
+            matrix_m(m, theta, vpu, gpu, bpu, pos_neighbor_K)
+            matrix_l(l, theta, vpu, gpu, bpu, pos_neighbor_K, pos_nvtheta, pos_npv)
 
-        # Include submatrix data into -J
-        lin, col = h.shape
-        for i in range(lin):
-            for d in range(col):
-                jac[i, d] = h[i, d]
+            # Include submatrix data into -J
+            lin, col = h.shape
+            for i in range(lin):
+                for d in range(col):
+                    jac[i, d] = h[i, d]
 
-        lin, col = n.shape
-        for i in range(lin):
-            for j in range(col):
-                jac[i, d + num_nodes] = n[i, d]
+            lin, col = n.shape
+            for i in range(lin):
+                for j in range(col):
+                    jac[i, d + num_nodes] = n[i, d]
 
-        lin, col = m.shape
-        for i in range(lin):
-            for d in range(col):
-                jac[i + num_nodes, d] = m[i, d]
+            lin, col = m.shape
+            for i in range(lin):
+                for d in range(col):
+                    jac[i + num_nodes, d] = m[i, d]
 
-        lin, col = l.shape
-        for i in range(lin):
-            for d in range(col):
-                jac[i + num_nodes, d + num_nodes] = l[i, d]
+            lin, col = l.shape
+            for i in range(lin):
+                for d in range(col):
+                    jac[i + num_nodes, d + num_nodes] = l[i, d]
 
-        # Calculate the inverse of the Jacobian matrix
-        jacinv = np.linalg.inv(jac)
+            # Calculate the inverse of the Jacobian matrix
+            jacinv = np.linalg.inv(jac)
+            # Solve for solution vector
+            sol = jacinv @ delta
 
-        # Solve for solution vector
-        sol = jacinv @ delta
+            # Update theta and voltage magnitude values
+            for i in range(num_nodes):
+                theta[i] = theta[i] + sol[i][0]
+                vpu[i] = vpu[i] + sol[i + num_nodes][0]
 
-        # Update theta and voltage magnitude values
-        for i in range(num_nodes):
-            theta[i] = theta[i] + sol[i][0]
-            vpu[i] = vpu[i] + sol[i + num_nodes][0]
+            # Update del_e vector
+            for i in range(2 * num_nodes):
+                if i not in vector_pos_data:
+                    del_e[i][0] = 0
+                else:
+                    del_e[i][0] = delta[i][0]
 
-        # Update del_e vector
-        for i in range(2 * num_nodes):
-            if i not in vector_pos_data:
-                del_e[i][0] = 0
-            else:
-                del_e[i][0] = delta[i][0]
+            # Increment iteration count
+            iteration = iteration + 1
+            if iteration > 100: 
+                raise StopIteration
+    except:
+        opi = 0.9
+        global non_converging
+        non_converging = True
+    else:
+        #----------------------------SUBSYSTEM II-------------------------------------
+        # Power at the reference bus
+        for i in pos_npv:
+            ppu[i] = active_power(i, theta, vpu, gpu, bpu, pos_neighbor_K)
 
-        # Increment iteration count
-        iteration = iteration + 1
+        ppu[pos_nvtheta] = active_power(pos_nvtheta, theta, vpu, gpu, bpu, pos_neighbor_K)
+        qpu[pos_nvtheta] = reactive_power(pos_nvtheta, theta, vpu, gpu, bpu, pos_neighbor_K)
+        #------------------------------------------------------------------------------
+        
+        #---------------------------SUBSYSTEM III-------------------------------------
+        # Power flows
+        active_power_flow = np.arange(num_nodes * num_nodes, dtype=np.float64).reshape(num_nodes, num_nodes)
+        active_power_flow.fill(0)
 
-    #----------------------------SUBSYSTEM II-------------------------------------
-    # Power at the reference bus
-    for i in pos_npv:
-        ppu[i] = active_power(i, theta, vpu, gpu, bpu, pos_neighbor_K)
+        for i in pos_nodes_in_branches:
+            conv = (1 / ((i[6] + i[7] * 1j)))
 
-    ppu[pos_nvtheta] = active_power(pos_nvtheta, theta, vpu, gpu, bpu, pos_neighbor_K)
-    qpu[pos_nvtheta] = reactive_power(pos_nvtheta, theta, vpu, gpu, bpu, pos_neighbor_K)
-    #------------------------------------------------------------------------------
-    
-    #---------------------------SUBSYSTEM III-------------------------------------
-    # Power flows
-    active_power_flow = np.arange(num_nodes * num_nodes, dtype=np.float64).reshape(num_nodes, num_nodes)
-    active_power_flow.fill(0)
+            active_power_flow[int(i[0]), int(i[1])] = np.real(conv) * (vpu[int(i[0])]**2) - \
+                vpu[int(i[0])] * vpu[int(i[1])] * (np.real(conv) * np.cos(theta[int(i[0])] - \
+                theta[int(i[1])]) + np.imag(conv) * np.sin(theta[int(i[0])] - \
+                        theta[int(i[1])]))
 
-    for i in pos_nodes_in_branches:
-        conv = (1 / ((i[6] + i[7] * 1j)))
+            active_power_flow[int(i[1]), int(i[0])] = np.real(conv) * (vpu[int(i[1])]**2) - \
+                vpu[int(i[0])] * vpu[int(i[1])] * (np.real(conv) * np.cos(theta[int(i[0])] - \
+                theta[int(i[1])]) - np.imag(conv) * np.sin(theta[int(i[0])] - \
+                        theta[int(i[1])]))
 
-        active_power_flow[int(i[0]), int(i[1])] = np.real(conv) * (vpu[int(i[0])]**2) - \
-            vpu[int(i[0])] * vpu[int(i[1])] * (np.real(conv) * np.cos(theta[int(i[0])] - \
-            theta[int(i[1])]) + np.imag(conv) * np.sin(theta[int(i[0])] - \
-                    theta[int(i[1])]))
+        # Suggestion: in the given problems, there are no phase-shifting transformers, so
+        # phi_km is zero, but it can be included in the calculation
 
-        active_power_flow[int(i[1]), int(i[0])] = np.real(conv) * (vpu[int(i[1])]**2) - \
-            vpu[int(i[0])] * vpu[int(i[1])] * (np.real(conv) * np.cos(theta[int(i[0])] - \
-            theta[int(i[1])]) - np.imag(conv) * np.sin(theta[int(i[0])] - \
-                    theta[int(i[1])]))
+        reactive_power_flow = np.arange(num_nodes * num_nodes, dtype=np.float64).reshape(num_nodes, num_nodes)
+        reactive_power_flow.fill(0)
 
-    # Suggestion: in the given problems, there are no phase-shifting transformers, so
-    # phi_km is zero, but it can be included in the calculation
+        for i in pos_nodes_in_branches:
+            conv = (1 / ((i[6] + i[7] * 1j)))
 
-    reactive_power_flow = np.arange(num_nodes * num_nodes, dtype=np.float64).reshape(num_nodes, num_nodes)
-    reactive_power_flow.fill(0)
+            reactive_power_flow[int(i[0]), int(i[1])] = -1 * (np.imag(conv) + (i[8] / 2)) * \
+                (vpu[int(i[0])]**2) - vpu[int(i[0])] * vpu[int(i[1])] * (np.real(conv) * \
+                    np.sin(theta[int(i[0])] - theta[int(i[1])]) - np.imag(conv) * \
+                    np.cos(theta[int(i[0])] - theta[int(i[1])]))
 
-    for i in pos_nodes_in_branches:
-        conv = (1 / ((i[6] + i[7] * 1j)))
+            reactive_power_flow[int(i[1]), int(i[0])] = -1 * (np.imag(conv) + (i[8] / 2)) * \
+                (vpu[int(i[1])]**2) + vpu[int(i[0])] * vpu[int(i[1])] * (np.real(conv) * \
+                    np.sin(theta[int(i[0])] - theta[int(i[1])]) + np.imag(conv) * \
+                    np.cos(theta[int(i[0])] - theta[int(i[1])]))
 
-        reactive_power_flow[int(i[0]), int(i[1])] = -1 * (np.imag(conv) + (i[8] / 2)) * \
-            (vpu[int(i[0])]**2) - vpu[int(i[0])] * vpu[int(i[1])] * (np.real(conv) * \
-                np.sin(theta[int(i[0])] - theta[int(i[1])]) - np.imag(conv) * \
-                np.cos(theta[int(i[0])] - theta[int(i[1])]))
+        print("==============================================")
+        print('\nThe system converged in the ' + str(iteration) + \
+            'th iteration\nThe execution time was ' + str(time.time() - start_time) + \
+            ' seconds\n\nPress Enter to continue\n')
+        input()
+        #------------------------------------------------------------------------------
+        #%%
+        # Losses and system results
 
-        reactive_power_flow[int(i[1]), int(i[0])] = -1 * (np.imag(conv) + (i[8] / 2)) * \
-            (vpu[int(i[1])]**2) + vpu[int(i[0])] * vpu[int(i[1])] * (np.real(conv) * \
-                np.sin(theta[int(i[0])] - theta[int(i[1])]) + np.imag(conv) * \
-                np.cos(theta[int(i[0])] - theta[int(i[1])]))
+        active_losses = []
+        reactive_losses = []
+        final_voltages_and_angles = []
+        active_powers = []
+        reactive_powers = []
+        active_flows = []
+        reactive_flows = []
 
-    print("==============================================")
-    print('\nThe system converged in the ' + str(iteration) + \
-        'th iteration\nThe execution time was ' + str(time.time() - start_time) + \
-        ' seconds\n\nPress Enter to continue\n')
-    input()
-    #------------------------------------------------------------------------------
-    #%%
-    # Losses and system results
+        for i in pos_nodes_in_branches:
+            active_losses.append(['Active losses between bus ' + \
+                                    str(int(pos_nodes_in_nodes[int(i[0])])) + ' and ' + \
+                                    str(int(pos_nodes_in_nodes[int(i[1])])) + ' (or ' + \
+                                    str(int(pos_nodes_in_nodes[int(i[1])])) + ' and ' + \
+                                    str(int(pos_nodes_in_nodes[int(i[0])])) + '): ' + str \
+                                    (np.round(active_power_flow[int(i[0]), int(i[1])] + \
+                                            active_power_flow[int(i[1]), int(i[0])], 5)) + ' pu'])
 
-    active_losses = []
-    reactive_losses = []
-    final_voltages_and_angles = []
-    active_powers = []
-    reactive_powers = []
-    active_flows = []
-    reactive_flows = []
+            reactive_losses.append(['Reactive losses between bus ' + \
+                                    str(int(pos_nodes_in_nodes[int(i[0])])) + ' and ' + \
+                                    str(int(pos_nodes_in_nodes[int(i[1])])) + ' (or ' + \
+                                    str(int(pos_nodes_in_nodes[int(i[1])])) + ' and ' + \
+                                    str(int(pos_nodes_in_nodes[int(i[0])])) + '): ' + str \
+                                    (np.round(reactive_power_flow[int(i[0]), int(i[1])] + \
+                                            reactive_power_flow[int(i[1]), int(i[0])], 5)) + ' pu'])
 
-    for i in pos_nodes_in_branches:
-        active_losses.append(['Active losses between bus ' + \
-                                str(int(pos_nodes_in_nodes[int(i[0])])) + ' and ' + \
-                                str(int(pos_nodes_in_nodes[int(i[1])])) + ' (or ' + \
-                                str(int(pos_nodes_in_nodes[int(i[1])])) + ' and ' + \
-                                str(int(pos_nodes_in_nodes[int(i[0])])) + '): ' + str \
-                                (np.round(active_power_flow[int(i[0]), int(i[1])] + \
-                                        active_power_flow[int(i[1]), int(i[0])], 5)) + ' pu'])
-
-        reactive_losses.append(['Reactive losses between bus ' + \
-                                str(int(pos_nodes_in_nodes[int(i[0])])) + ' and ' + \
-                                str(int(pos_nodes_in_nodes[int(i[1])])) + ' (or ' + \
-                                str(int(pos_nodes_in_nodes[int(i[1])])) + ' and ' + \
-                                str(int(pos_nodes_in_nodes[int(i[0])])) + '): ' + str \
-                                (np.round(reactive_power_flow[int(i[0]), int(i[1])] + \
-                                        reactive_power_flow[int(i[1]), int(i[0])], 5)) + ' pu'])
-
-        active_flows.append(['Active power flow from bus ' + \
-                            str(int(pos_nodes_in_nodes[int(i[0])])) + ' to ' + \
-                            str(int(pos_nodes_in_nodes[int(i[1])])) + ' and ' + \
-                            str(int(pos_nodes_in_nodes[int(i[1])])) + ' to ' + \
-                            str(int(pos_nodes_in_nodes[int(i[0])])) + \
-                            ', respectively: ' + str \
-                            (np.round(active_power_flow[int(i[0]), int(i[1])], 5)) + ' and ' + \
-                                    str(np.round(active_power_flow[int(i[1]), int(i[0])], 5)) + \
-                                    ' pu'])
-
-        reactive_flows.append(['Reactive power flow from bus ' + \
+            active_flows.append(['Active power flow from bus ' + \
                                 str(int(pos_nodes_in_nodes[int(i[0])])) + ' to ' + \
                                 str(int(pos_nodes_in_nodes[int(i[1])])) + ' and ' + \
                                 str(int(pos_nodes_in_nodes[int(i[1])])) + ' to ' + \
                                 str(int(pos_nodes_in_nodes[int(i[0])])) + \
                                 ', respectively: ' + str \
-                                (np.round(reactive_power_flow[int(i[0]), int(i[1])], 5)) + ' and ' + \
-                                    str(np.round(reactive_power_flow[int(i[1]), int(i[0])], 5)) + \
-                                    ' pu'])
-    
+                                (np.round(active_power_flow[int(i[0]), int(i[1])], 5)) + ' and ' + \
+                                        str(np.round(active_power_flow[int(i[1]), int(i[0])], 5)) + \
+                                        ' pu'])
 
-    for i in range(num_nodes):
-        final_voltages_and_angles.append(['The final voltage at bus ' + \
-                                            str(int(pos_nodes_in_nodes[i])) + ' is ' + \
-                                            str(np.round(vpu[i], 5)) + \
-                                                ' pu, with an angle of ' + str(np.round(theta[i], 5)) + \
-                                                ' radians (or ' + \
-                                                str(np.round(np.degrees(theta[i]), 5)) + \
-                                                '°) with respect to the reference'])
+            reactive_flows.append(['Reactive power flow from bus ' + \
+                                    str(int(pos_nodes_in_nodes[int(i[0])])) + ' to ' + \
+                                    str(int(pos_nodes_in_nodes[int(i[1])])) + ' and ' + \
+                                    str(int(pos_nodes_in_nodes[int(i[1])])) + ' to ' + \
+                                    str(int(pos_nodes_in_nodes[int(i[0])])) + \
+                                    ', respectively: ' + str \
+                                    (np.round(reactive_power_flow[int(i[0]), int(i[1])], 5)) + ' and ' + \
+                                        str(np.round(reactive_power_flow[int(i[1]), int(i[0])], 5)) + \
+                                        ' pu'])
+        
 
-        active_powers.append(['Net active power injected at bus ' + \
-                                str(int(pos_nodes_in_nodes[i])) + ' is ' + \
-                                str(np.round(active_power(nodes_pos[i], \
-                                        theta, vpu, gpu, bpu, pos_neighbor_K), 5)) + ' pu'])
+        for i in range(num_nodes):
+            final_voltages_and_angles.append(['The final voltage at bus ' + \
+                                                str(int(pos_nodes_in_nodes[i])) + ' is ' + \
+                                                str(np.round(vpu[i], 5)) + \
+                                                    ' pu, with an angle of ' + str(np.round(theta[i], 5)) + \
+                                                    ' radians (or ' + \
+                                                    str(np.round(np.degrees(theta[i]), 5)) + \
+                                                    '°) with respect to the reference'])
+            if perform_contingency == False:
+                global bus_voltage_pre_CS
+                bus_voltage_pre_CS.append(np.round(vpu[i], 5))
 
-        reactive_powers.append(['Net reactive power injected at bus ' + \
-                                str(int(pos_nodes_in_nodes[i])) + ' is ' + \
-                                str(np.round(reactive_power(nodes_pos[i], \
-                                        theta, vpu, gpu, bpu, pos_neighbor_K), 5)) + ' pu'])
-    
-    Pi_values = []
-    for i in pos_nodes_in_branches:
-        Pi_values.append(np.round(active_power_flow[int(i[0]), int(i[1])], 5))
+            active_powers.append(['Net active power injected at bus ' + \
+                                    str(int(pos_nodes_in_nodes[i])) + ' is ' + \
+                                    str(np.round(active_power(nodes_pos[i], \
+                                            theta, vpu, gpu, bpu, pos_neighbor_K), 5)) + ' pu'])
 
-    Vi_values = []
-    Vj_values = []
-    impedance = []
+            reactive_powers.append(['Net reactive power injected at bus ' + \
+                                    str(int(pos_nodes_in_nodes[i])) + ' is ' + \
+                                    str(np.round(reactive_power(nodes_pos[i], \
+                                            theta, vpu, gpu, bpu, pos_neighbor_K), 5)) + ' pu'])
+        
+        Pi_values = []
+        for i in pos_nodes_in_branches:
+            Pi_values.append(np.round(active_power_flow[int(i[0]), int(i[1])], 5))
 
-    for i in branches_data:
-        Vi_values.append(np.round(vpu[int(i[0]) - 1], 5))
-        Vj_values.append(np.round(vpu[int(i[1]) - 1], 5))
-        impedance.append(i[7])
+        Vi_values = []
+        Vj_values = []
+        impedance = []
 
-    
-    # Define the system parameters
-    NL = len(impedance)  # Number of lines
-    W = 1.0  # Weighting factor
-    n = 1.0  # Penalty function
+        for i in branches_data:
+            Vi_values.append(np.round(vpu[int(i[0]) - 1], 5))
+            Vj_values.append(np.round(vpu[int(i[1]) - 1], 5))
+            impedance.append(i[7])
 
-    # Calculate PIP
-    pip = 0.0
-    for i in range(NL):
-        Pi = Pi_values[i]
-        Pi_max = (Vi_values[i] * Vj_values[i]) / impedance[i]
-        pip += (W / (2 * n)) * ((Pi / Pi_max) ** (2 * n))
+        
+        # Define the system parameters
+        NL =num_branches  # Number of lines
+        W = 1.0  # Weighting factor
+        n = 1.0  # Penalty function
 
-    print(f"Active Power Performance Index (PIP): {pip:.5f}")
+        # Calculate PIP
+        pip = 0.0
+        for i in range(NL):
+            if i == 0: continue
+            Pi_max = (Vi_values[i] * Vj_values[i]) / impedance[i]
+            pip += (W / (2 * n)) * ((Pi_values[i] / Pi_max) ** (2 * n))
 
-    
+        print(f"Active Power Performance Index (PIP): {pip:.5f}")
 
-    #-----------------------------PIV---------------------------
-    # Define the system parameters (you can adjust these values as needed)
-    W = 1.0  # Weighting factor
-    n = 1.0  # Penalty function
+        
 
-    Vi_values = []
-    for i in range(num_nodes):
-        Vi_values.append(np.round(vpu[i], 5)) 
+        #-----------------------------PIV---------------------------
+        # Define the system parameters (you can adjust these values as needed)
+        # W = 1.0  # Weighting factor
+        # n = 1.0  # Penalty function
 
-    NG = len(Vi_values)
-    piv = 0.0
-    Vmax, Vmin = 1.05, 0.95
-    for i in range(NG):
-        # Calculate PIV for the given bus
-        piv = (W / (2 * n)) * ((Vi_values[i] - Vmin) / (Vmax - Vmin))**(2 * n)
-    
-    print(f"Voltage Performance Index (PIP): {piv:.5f}\n")
-    
+        Vi_values = []
+        for i in range(num_nodes):
+            Vi_values.append(np.round(vpu[i], 5)) 
 
-    opi = pip + piv
+        NG = num_nodes
+        piv = 0.0
+        Vmax, Vmin = 1.05, 0.95
+
+        for i in range(NG):
+            # Calculate PIV for the given bus
+            if i == 0: continue
+            piv += (W / (2 * n)) * (((abs(Vi_values[i]) - abs(bus_voltage_pre_CS[i])) / (Vmax - Vmin))**(2 * n))
+            
+        
+        print(f"Voltage Performance Index (PIP): {piv:.5f}\n")    
+
+        opi = pip + piv
     print(f"Overall Performance Index (OPI): {opi:.5f}\n")
     
     
@@ -813,19 +849,36 @@ def program(perform_contingency = False, line_choice="", multiple=True):
                 for branch in line_banches:
                     program(perform_contingency = True, line_choice=branch)
                     print(f"Transmission line {branch} completed\n")
-                new_list = []
+                new_list = [['Line outage', 'Normalized OPI (Pn)', 'class']]
                 i=0
                 #  Normalization of OPI data
-                for branch in line_banches:                    
-                    Pn = (0.8 * (opi_list[i] - Pmin) / (Pmax - Pmin)) + 0.1                        
-                    new_list.append({branch : round(Pn, 4)})
+                for branch in line_banches: 
+                    Pn = (0.8 * (opi_list[i] - Pmin) / (Pmax - Pmin)) + 0.1  
+                    if non_converging == True:
+                        Pn = 0.9                                          
+                    new_list.append([branch, round(Pn, 4), classify_opi(round(Pn, 4))])
 
                     i += 1
+                csv_file_path = 'data.csv'
+                # Open the CSV file in write mode
+                with open(csv_file_path, 'w', newline='') as csv_file:
+                    # Create a CSV writer object
+                    csv_writer = csv.writer(csv_file)
+                    
+                    # Write the column titles
+                    csv_writer.writerow(new_list[0])
+                    
+                    # Write the data rows
+                    csv_writer.writerows(new_list[1:])
+
+                print(f'Data has been exported to {csv_file_path}')
+                
+
                 # Sort the list of dictionaries by their values in descending order
-                sorted_data = sorted(new_list, key=lambda x: list(x.values())[0], reverse=True)
+                # sorted_data = sorted(new_list, key=lambda x: list(x.values())[0], reverse=True)
 
 
-                print("sorted_opi_list: ", sorted_data)
+                print("normalized_opi_list: ", new_list)
                 print('\nPress Enter to continue')
                 input()
                 menu()
